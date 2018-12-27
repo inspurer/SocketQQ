@@ -78,7 +78,33 @@ def socketHander(connectionSocket):
                 #通知所有人xxx已下线
                 for socket in connectionSocketList:
                     socket.send(json.dumps(updateConnectionList()).encode("utf-8"))
-                pass
+
+            elif type == "4":
+                dip = receivedMessage.get("destinationIP")
+                for socket in connectionSocketList:
+                    sip, sport = socket.getpeername()
+                    print("sip", sip)
+                    if sip == dip:
+                        message = {
+                            "type": "3",
+                            "sourceIP": receivedMessage.get("sourceIP"),
+                            "filename": receivedMessage.get("filename"),
+                            "content": receivedMessage.get("content")
+                        }
+                        socket.send(json.dumps(message).encode("utf-8"))
+
+            elif type == "5":
+                message = {
+                    "type": "3",
+                    "sourceIP": receivedMessage.get("sourceIP"),
+                    "filename": receivedMessage.get("filename"),
+                    "content": receivedMessage.get("content")
+                }
+                for socket in connectionSocketList:
+                    socket.send(json.dumps(message).encode("utf-8"))
+
+
+
         except:
             pass
 

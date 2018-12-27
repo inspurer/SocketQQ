@@ -8,8 +8,14 @@
 from socket import *
 from threading import Thread
 import wx
+import os
+from tkinter import filedialog
+import tkinter
 import json
 import wx.lib.agw.customtreectrl as CT
+
+root = tkinter.Tk()
+root.withdraw() #****实现主窗口隐藏
 
 serverPort = 6789
 serverIp = "10.10.21.222"
@@ -22,6 +28,12 @@ class QICQ(wx.Frame):
         wx.Frame.__init__(self,parent=None,title="SocketQICQ",size=(600,400))
 
         panel=wx.Panel(self)
+
+        self.isChoosedFile = False
+
+        self.dataOfChoosedFile = None
+
+        self.fileName = None
 
         panel.SetBackgroundColour((0, 153, 255))
 
@@ -44,9 +56,12 @@ class QICQ(wx.Frame):
                                style=wx.TE_READONLY)
         inputTip.SetForegroundColour((0,153,255))
         inputTip.SetBackgroundColour((224,255,255))
-        self.input = wx.TextCtrl(parent=panel,pos=(300,30),size=(275,50))
+        self.input = wx.TextCtrl(parent=panel,pos=(300,30),size=(130,50))
         self.input.SetForegroundColour((0,153,255))
         self.input.SetBackgroundColour((224,255,255))
+
+        self.fileChooser = wx.Button(parent=panel,pos=(440,10),size=(130,70),label="选择文件")
+        self.fileChooser.SetBackgroundColour((224,255,255))
 
         self.send = wx.Button(parent=panel,pos=(300,100),size=(275,50),label="发送")
         self.send.SetBackgroundColour((224,255,255))
@@ -73,6 +88,7 @@ class QICQ(wx.Frame):
 
         self.Bind(wx.EVT_BUTTON,self.OnInfoClicked,self.info)
         self.Bind(wx.EVT_BUTTON,self.OnSendClicked,self.send)
+        self.Bind(wx.EVT_BUTTON,self.onFileChooseClicked,self.fileChooser)
 
     def OnInfoClicked(self,event):
         wx.MessageDialog(self, u'''\r\n\r\n\r\n\t\t1、互联的环境必须是在同一个局域网\r\n
@@ -83,8 +99,8 @@ class QICQ(wx.Frame):
     def OnSendClicked(self,event):
         self.sendMessage = self.input.Value
         #print(self.sendMessage)
-        if len(self.sendMessage) == 0:
-            wx.MessageDialog(self, u"请先输入待发送的消息", u"警告", wx.OK).ShowModal()
+        if len(self.sendMessage) == 0 and self.isChoosedFile == False:
+            wx.MessageDialog(self, u"请先输入(选择)待发送的消息(文件)", u"警告", wx.OK).ShowModal()
             return None
         selected = self.userListTree.GetSelection()
         selected = self.userListTree.GetItemText(selected)
@@ -95,21 +111,57 @@ class QICQ(wx.Frame):
 
         #表示选择的是根节点，需要转发群消息
         if selected == "已登录用户":
-            self.sendMessage = {
-                "type":"2",
-                "sourceIP":self.ip,
-                "destinationIP":selected,
-                "content":self.sendMessage
-            }
+            if self.isChoosedFile == False:
+                self.sendMessage = {
+                    "type":"2",
+                    "sourceIP":self.ip,
+                    "destinationIP":selected,
+                    "content":self.sendMessage
+                }
+
+            else:
+                self.sendMessage = {
+                    "type":"5",
+                    "sourceIP":self.ip,
+                    "destinationIP":selected,
+                    "filename":self.fileName,
+                    "content":self.dataOfChoosedFile
+                }
+
 
         else:
-            self.sendMessage = {
-                "type":"1",
-                "sourceIP":self.ip,
-                "destinationIP":selected,
-                "content":self.sendMessage
-            }
+            if self.isChoosedFile == False:
+                self.sendMessage = {
+                    "type":"1",
+                    "sourceIP":self.ip,
+                    "destinationIP":selected,
+                    "content":self.sendMessage
+                }
 
+
+
+            else:
+                self.sendMessage = {
+                    "type": "4",
+                    "sourceIP": self.ip,
+                    "destinationIP": selected,
+                    "filename": self.fileName,
+                    "content": self.dataOfChoosedFile
+                }
+
+
+
+    def onFileChooseClicked(self,event):
+        filepath = filedialog.askopenfilename(title="请选择要发送的文件")
+        if len(filepath)>0:
+            filedicpath, fullflname = os.path.split(filepath)
+            self.fileName = fullflname
+            self.isChoosedFile = True
+            with open(filepath,"r") as f:
+                self.dataOfChoosedFile = f.read()
+
+        print(self.fileName)
+        pass
 
     def socketHander(self):
         self.clientSocket = socket(AF_INET, SOCK_STREAM)
@@ -121,13 +173,20 @@ class QICQ(wx.Frame):
             #发送消息
             if len(self.sendMessage) == 0:
                 pass
-
             else:
-                self.clientSocket.send(json.dumps(self.sendMessage).encode("utf-8"))
-                self.messageList.AppendText("消息["+self.sendMessage.get("content")+"]发送成功\r\n")
-                self.input.SetLabelText("")
-                print("发送成功")
-                self.sendMessage = ""
+                if self.isChoosedFile == True:
+                    self.clientSocket.send(json.dumps(self.sendMessage).encode("utf-8"))
+                    self.messageList.AppendText("文件[" + self.fileName + "]发送成功\r\n")
+                    self.fileName = None
+                    self.dataOfChoosedFile = None
+                    self.isChoosedFile = False
+                    self.sendMessage = ""
+
+                else:
+                    self.clientSocket.send(json.dumps(self.sendMessage).encode("utf-8"))
+                    self.messageList.AppendText("消息["+self.sendMessage.get("content")+"]发送成功\r\n")
+                    self.input.SetLabelText("")
+                    self.sendMessage = ""
 
             try:
                 # 接收消息
@@ -151,6 +210,12 @@ class QICQ(wx.Frame):
                     # 客户端接收服务端发来的刷新列表请求
                     self.userList = receivedMessage.get("content")
                     self.setUserList()
+
+                elif type == "3":
+                    filename = receivedMessage.get("filename")
+                    print("rrrr",filename)
+                    with open(filename,"w") as f:
+                        f.write(receivedMessage.get("content"))
             except:
                 print("等待数据...")
                 pass
